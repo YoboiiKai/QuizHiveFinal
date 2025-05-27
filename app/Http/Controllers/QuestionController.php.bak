@@ -1,0 +1,277 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Question;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
+use Inertia\Inertia;
+
+class QuestionController extends Controller
+{
+    public function create()
+    {
+        return Inertia::render('Admin/QuestionBank', [
+            'mode' => 'create',
+            'categories' => ['Science', 'Math', 'History', 'Literature'], // You might want to fetch these from a Categories table
+            'difficulties' => ['easy', 'medium', 'hard'],
+            'questionTypes' => ['multiple_choice', 'true_false', 'open_ended']
+        ]);
+    }
+
+    public function edit(Question $question)
+    {
+        return Inertia::render('Admin/QuestionBank', [
+            'mode' => 'edit',
+            'question' => [
+                'id' => $question->id,
+                'questionText' => $question->question_text,
+                'questionType' => str_replace('_', '-', $question->type),
+                'options' => $question->options,
+                'correctAnswer' => $question->correct_answer,
+                'category' => $question->category,
+                'difficulty' => $question->difficulty,
+                'points' => $question->points,
+                'timeLimit' => $question->time_limit,
+                'explanation' => $question->explanation ?? '',
+                'competitionId' => $question->competition_id,
+                'createdAt' => $question->created_at,
+                'updatedAt' => $question->updated_at
+            ],
+            'categories' => ['Science', 'Math', 'History', 'Literature'], // You might want to fetch these from a Categories table
+            'difficulties' => ['easy', 'medium', 'hard'],
+            'questionTypes' => ['multiple_choice', 'true_false', 'open_ended']
+        ]);
+    }
+    
+    public function index(Request $request)
+    {
+        // Get the competition ID from the request if provided
+        $competitionId = $request->query('competition_id');
+        
+        // Build the query
+        $query = Question::with('competition');
+        
+        // Filter by competition if provided
+        if ($competitionId) {
+            $query->where('competition_id', $competitionId);
+        }
+        
+        // Get questions with pagination
+        $questions = $query->latest()->paginate(10);
+          // Format the questions for frontend
+        $formattedQuestions = $questions->map(function ($question) {
+            return [
+                'id' => $question->id,
+                'questionText' => $question->question_text,
+                'questionType' => str_replace('_', '-', $question->type),
+                'options' => $question->options,
+                'correctAnswer' => $question->correct_answer,
+                'category' => $question->category,
+                'difficulty' => $question->difficulty,
+                'points' => $question->points,
+                'timeLimit' => $question->time_limit,
+                'explanation' => $question->explanation ?? '',
+                'competitionId' => $question->competition_id,
+                'competitionName' => $question->competition ? $question->competition->title : null,
+                'createdAt' => $question->created_at,
+                'updatedAt' => $question->updated_at
+            ];
+        });
+
+        $responseData = [
+            'questions' => $formattedQuestions,
+            'pagination' => [
+                'current_page' => $questions->currentPage(),
+                'last_page' => $questions->lastPage(),
+                'per_page' => $questions->perPage(),
+                'total' => $questions->total()
+            ]
+        ];        // Return Inertia view with data
+        return Inertia::render('Admin/QuestionBank', [
+            'questions' => $formattedQuestions,
+            'categories' => ['Science', 'Math', 'History', 'Literature'],
+            'difficulties' => ['easy', 'medium', 'hard'],
+            'questionTypes' => ['multiple_choice', 'true_false', 'open_ended'],
+            'pagination' => [
+                'current_page' => $questions->currentPage(),
+                'last_page' => $questions->lastPage(),
+                'per_page' => $questions->perPage(),
+                'total' => $questions->total()
+            ]
+        ]);
+    }
+
+    public function store(Request $request)
+    {
+        // Normalize the question type format
+        $data = $request->all();
+        if (isset($data['question_type'])) {
+            $data['type'] = str_replace('-', '_', $data['question_type']);
+        }
+        
+        // Ensure correct_answer is properly set from either field
+        if (empty($data['correct_answer']) && !empty($data['correctAnswer'])) {
+            $data['correct_answer'] = $data['correctAnswer'];
+        }
+
+        $validator = Validator::make($data, [
+            'competition_id' => 'required|exists:competitions,id',
+            'question_text' => 'required|string|max:1000',
+            'options' => 'required_if:type,multiple_choice|array',
+            'correct_answer' => 'required|string',
+            'type' => 'required|in:multiple_choice,true_false,open_ended',
+            'category' => 'required|string',
+            'difficulty' => 'required|string',
+            'points' => 'integer|min:1',
+            'time_limit' => 'nullable|integer|min:1',
+            'explanation' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $validatedData = $validator->validated();
+            
+            // Create the question
+            $question = Question::create([
+                'competition_id' => $validatedData['competition_id'],
+                'question_text' => $validatedData['question_text'],
+                'options' => $data['options'] ?? [],
+                'correct_answer' => $validatedData['correct_answer'],
+                'type' => $validatedData['type'],
+                'category' => $validatedData['category'],
+                'difficulty' => $validatedData['difficulty'],
+                'points' => $validatedData['points'] ?? 1,
+                'time_limit' => $validatedData['time_limit'] ?? null,
+                'explanation' => $data['explanation'] ?? null,
+            });
+
+            return back()->with('success', 'Question created successfully');
+
+        } catch (\Exception $e) {
+            return back()->withErrors(['error' => 'Failed to create question: ' . $e->getMessage()]);
+        }
+    }    public function update(Request $request, Question $question)
+    {
+        \Log::info('Update question request:', $request->all());
+        
+        $validator = Validator::make($request->all(), [
+            'question_text' => 'required|string|max:1000',
+            'options' => 'required_if:type,multiple_choice|array',
+            'correct_answer' => 'required|string',
+            'type' => 'required|in:multiple_choice,true_false,open_ended',
+            'category' => 'required|string',
+            'difficulty' => 'required|string',
+            'points' => 'required|integer|min:1',
+            'time_limit' => 'nullable|integer|min:1',
+            'explanation' => 'nullable|string',
+            'competition_id' => 'exists:competitions,id',
+        ]);
+
+        if ($validator->fails()) {
+            \Log::warning('Question update validation failed:', $validator->errors()->toArray());
+            return back()->withErrors($validator)->withInput();
+        }
+
+        try {
+            $validated = $validator->validated();
+            \Log::info('Validated question data:', $validated);
+            
+            $question->update($validated);
+            
+            return back()->with('success', 'Question updated successfully');
+        } catch (\Exception $e) {
+            \Log::error('Question update error:', ['error' => $e->getMessage()]);
+            return back()->withErrors(['error' => 'Failed to update question: ' . $e->getMessage()]);
+        }
+    }
+
+    public function destroy(Question $question)
+    {
+        try {
+            $question->delete();
+            
+            return redirect()
+                ->back()
+                ->with('success', 'Question deleted successfully.');
+        } catch (\Exception $e) {
+            return redirect()
+                ->back()
+                ->with('error', 'Failed to delete question. Please try again.');
+        }
+    }
+
+    public function bulkUpdate(Request $request, $competitionId)
+    {
+        $validator = Validator::make($request->all(), [
+            'questions' => 'required|array',
+            'questions.*.id' => 'required|exists:questions,id',
+            'questions.*.question_text' => 'required|string|max:1000',
+            'questions.*.options' => 'required_if:questions.*.type,multiple_choice|array',
+            'questions.*.correct_answer' => 'required|string',
+            'questions.*.type' => 'required|in:multiple_choice,true_false,open_ended',
+            'questions.*.points' => 'required|integer|min:1',
+            'questions.*.time_limit' => 'nullable|integer|min:1',
+        ]);
+
+        if ($validator->fails()) {
+            return back()->withErrors($validator)->withInput();
+        }
+
+        try {
+            foreach ($request->questions as $questionData) {
+                $question = Question::findOrFail($questionData['id']);
+                $question->update($questionData);
+            }
+            
+            return redirect()
+                ->back()
+                ->with('success', 'Questions updated successfully.');
+        } catch (\Exception $e) {
+            return redirect()
+                ->back()
+                ->with('error', 'Failed to update questions. Please try again.');
+        }
+    }
+
+    public function create()
+    {
+        return Inertia::render('Admin/QuestionBank', [
+            'mode' => 'create',
+            'categories' => ['Science', 'Math', 'History', 'Literature'], // You might want to fetch these from a Categories table
+            'difficulties' => ['easy', 'medium', 'hard'],
+            'questionTypes' => ['multiple_choice', 'true_false', 'open_ended']
+        ]);
+    }
+
+    public function edit(Question $question)
+    {
+        return Inertia::render('Admin/QuestionBank', [
+            'mode' => 'edit',
+            'question' => [
+                'id' => $question->id,
+                'questionText' => $question->question_text,
+                'questionType' => str_replace('_', '-', $question->type),
+                'options' => $question->options,
+                'correctAnswer' => $question->correct_answer,
+                'category' => $question->category,
+                'difficulty' => $question->difficulty,
+                'points' => $question->points,
+                'timeLimit' => $question->time_limit,
+                'explanation' => $question->explanation ?? '',
+                'competitionId' => $question->competition_id,
+                'createdAt' => $question->created_at,
+                'updatedAt' => $question->updated_at
+            ],
+            'categories' => ['Science', 'Math', 'History', 'Literature'], // You might want to fetch these from a Categories table
+            'difficulties' => ['easy', 'medium', 'hard'],
+            'questionTypes' => ['multiple_choice', 'true_false', 'open_ended']
+        ]);
+    }
+}

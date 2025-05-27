@@ -1,0 +1,173 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Competition;
+use Illuminate\Http\Request;
+use Illuminate\Support    public function destroy(Competition $competition)
+    {
+        // Check if the authenticated user owns this competition
+        if ($competition->user_id !== auth()->user()->id) {
+            if (request()->wantsJson()) {
+                return response()->json([
+                    'flash' => [
+                        'type' => 'error',
+                        'message' => 'You are not authorized to delete this competition.'
+                    ]
+                ], 403);
+            }
+            
+            return redirect()->route('admin.competitions')
+                ->with('flash', [
+                    'type' => 'error',
+                    'message' => 'You are not authorized to delete this competition.'
+                ]);
+        }
+
+        $competition->delete();
+        
+        if (request()->wantsJson()) {
+            return response()->json([
+                'flash' => [
+                    'type' => 'success',
+                    'message' => 'Competition deleted successfully!'
+                ]
+            ]);
+        }
+
+        return redirect()->route('admin.competitions')
+            ->with('flash', [
+                'type' => 'success',
+                'message' => 'Competition deleted successfully!'
+            ]);Inertia;
+
+class CompetitionController extends Controller
+{
+    /**
+     * Display a listing of the resource.
+     */
+    public function index()
+    {
+        $competitions = Competition::where('user_id', auth()->user()->id)
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        return Inertia::render('Admin/Competition', [
+            'competitions' => $competitions
+        ]);
+    }
+
+    /**
+     * Store a newly created resource in storage.
+     */
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'title' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'date' => 'nullable|date',
+            'location' => 'nullable|string|max:255',
+            'teams' => 'nullable|integer|min:0',
+            'rounds' => 'nullable|integer|min:0',
+            'status' => 'required|string|in:Upcoming,Completed',
+            'code' => 'required|string|unique:competitions,code'
+        ]);
+
+        $competition = Competition::create([
+            ...$validated,
+            'user_id' => auth()->user()->id
+        ]);
+        
+        if ($request->wantsJson()) {
+            return response()->json([
+                'id' => $competition->id,
+                'flash' => [
+                    'type' => 'success',
+                    'message' => 'Competition created successfully!'
+                ]
+            ]);
+        }
+
+        return redirect()->route('admin.competitions')
+            ->with('flash', [
+                'type' => 'success',
+                'message' => 'Competition created successfully!'
+            ]);
+    }
+
+    /**
+     * Update the specified resource in storage.
+     */
+    public function update(Request $request, Competition $competition)
+    {
+        // Check if the authenticated user owns this competition
+        if ($competition->user_id !== auth()->user()->id) {
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'flash' => [
+                        'type' => 'error',
+                        'message' => 'You are not authorized to update this competition.'
+                    ]
+                ], 403);
+            }
+            
+            return redirect()->route('admin.competitions')
+                ->with('flash', [
+                    'type' => 'error',
+                    'message' => 'You are not authorized to update this competition.'
+                ]);
+        }
+
+        $validated = $request->validate([
+            'title' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'date' => 'nullable|date',
+            'location' => 'nullable|string|max:255',
+            'teams' => 'nullable|integer|min:0',
+            'rounds' => 'nullable|integer|min:0',
+            'status' => 'required|string|in:Upcoming,Completed',
+            'code' => 'required|string|unique:competitions,code,' . $competition->id
+        ]);
+
+        $competition->update($validated);
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'competition' => $competition,
+                'flash' => [
+                    'type' => 'success',
+                    'message' => 'Competition updated successfully!'
+                ]
+            ]);
+        }
+
+        return redirect()->route('admin.competitions')
+            ->with('flash', [
+                'type' => 'success',
+                'message' => 'Competition updated successfully!'
+            ]);
+    }
+
+    /**
+     * Remove the specified resource from storage.
+     */
+    public function destroy(Competition $competition)
+    {
+        // Check if the authenticated user owns this competition
+        if ($competition->user_id !== auth()->user()->id) {
+            return redirect()->route('admin.competitions')
+                ->with('flash', [
+                    'type' => 'error',
+                    'message' => 'You are not authorized to delete this competition.'
+                ]);
+        }
+
+        $competition->delete();
+
+        return redirect()->route('admin.competitions')
+            ->with('flash', [
+                'type' => 'success',
+                'message' => 'Competition deleted successfully!'
+            ]);
+    }
+}
